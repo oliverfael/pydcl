@@ -47,7 +47,7 @@ __all__ = [
     # Data model hierarchy
     "DivisionType", "ProjectStatus", "CostFactors", "RepositoryMetrics",
     "RepositoryConfig", "CostCalculationResult", "OrganizationCostReport",
-    "ValidationError",
+    "DivisionMetadata", "ValidationError",  # <- Add DivisionMetadata here
     
     # Integration components
     "GitHubMetricsClient", "validate_config", "load_division_config",
