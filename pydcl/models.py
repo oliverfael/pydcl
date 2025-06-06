@@ -217,11 +217,106 @@ class DivisionMetadata:
         }
     
     def __repr__(self) -> str:
-        """String representation of division metadata."""
-        return (f"DivisionMetadata(division={self.division}, "
-                f"description={self.description}, "
-                f"governance_threshold={self.governance_threshold}, "
-                f"isolation_threshold={self.isolation_threshold}, "
-                f"priority_boost={self.priority_boost}, "
-                f"responsible_architect={self.responsible_architect})")
+        """Technical string representation for debugging and logging."""
+        return (
+            f"DivisionMetadata("
+            f"division={self.division.value}, "
+            f"governance_threshold={self.governance_threshold}, "
+            f"isolation_threshold={self.isolation_threshold}, "
+            f"priority_boost={self.priority_boost})"
+        )
+
+class CostCalculationResult:
+    """Complete cost calculation with governance validation."""
+    def __init__(self, repository: str, division: DivisionType, status: ProjectStatus):
+        self.repository = repository
+        self.division = division
+        self.status = status
+        self.normalized_score = 0.0
+        self.governance_alerts: List[str] = []
+        self.sinphase_violations: List[str] = []
+        self.requires_isolation = False
+        self.raw_metrics = None
+        self.cost_factors = CostFactors()
+        self.calculated_score = 0.0  # Raw calculation result (0.0-1.0)
+        
+    def apply_governance_thresholds(self) -> None:
+        """Apply Sinphasé governance thresholds with isolation triggers."""
+        if self.normalized_score >= GOVERNANCE_THRESHOLD * 100:
+            self.governance_alerts.append(f"Governance threshold exceeded: {self.normalized_score:.1f}")
+        
+        if self.normalized_score >= ISOLATION_THRESHOLD * 100:
+            self.governance_alerts.append(f"Isolation threshold exceeded: {self.normalized_score:.1f}")
+            self.requires_isolation = True
+            
+        if self.normalized_score >= ARCHITECTURAL_REORGANIZATION_THRESHOLD * 100:
+            self.governance_alerts.append("Architectural reorganization required")
     
+    def set_calculation_result(self, raw_score: float, normalized_score: float, alerts: List[str]) -> None:
+        """Set calculation results with systematic validation."""
+        self.calculated_score = raw_score
+        self.normalized_score = normalized_score
+        self.governance_alerts = alerts.copy()
+        self.apply_governance_thresholds()
+
+class OrganizationCostReport:
+    """Complete cost analysis implementing Sinphasé governance."""
+    def __init__(self, organization: str):
+        self.organization = organization
+        self.total_repositories = 0
+        self.analyzed_repositories = 0
+        self.repository_scores: List[CostCalculationResult] = []
+        self.division_summaries: Dict[str, Dict[str, Any]] = {}
+        self.sinphase_compliance_rate = 1.0
+        
+    def calculate_governance_metrics(self) -> None:
+        """Calculate organization-wide governance compliance."""
+        if not self.repository_scores:
+            return
+            
+        total_violations = sum(len(repo.sinphase_violations) for repo in self.repository_scores)
+        self.sinphase_compliance_rate = 1.0 - (total_violations / len(self.repository_scores))
+        
+    def get_isolation_candidates(self) -> List[CostCalculationResult]:
+        """Identify repositories requiring isolation per Sinphasé protocol."""
+        return [repo for repo in self.repository_scores if repo.requires_isolation]
+
+class ValidationError:
+    """Structured validation error with Sinphasé compliance tracking."""
+    def __init__(self, field: str, message: str, severity: str = "error"):
+        self.field = field
+        self.message = message
+        self.severity = severity
+        self.timestamp = datetime.utcnow()
+        
+    def is_sinphase_violation(self) -> bool:
+        """Determine if error represents Sinphasé methodology violation."""
+        sinphase_keywords = ["cost", "threshold", "isolation", "complexity", "governance"]
+        return any(keyword in self.message.lower() for keyword in sinphase_keywords)
+
+# Sinphasé Cost Function Implementation
+def calculate_sinphase_cost(metrics: RepositoryMetrics, factors: CostFactors) -> float:
+    """
+    Core Sinphasé cost calculation with bounded complexity validation.
+    
+    Cost = Σ(metrici × weighti) + circularpenalty + temporalpressure
+    Where cost must remain <= 0.6 for autonomous operation.
+    """
+    complexity_score = metrics.calculate_complexity_score()
+    
+    # Weighted cost calculation
+    base_cost = (
+        (metrics.stars_count / 1000.0) * factors.stars_weight +
+        (metrics.commits_last_30_days / 100.0) * factors.commit_activity_weight +
+        complexity_score * (factors.size_weight + factors.build_time_weight) +
+        (factors.test_coverage_weight * 0.8)  # Base coverage assumption
+    )
+    
+    # Apply manual boost with governance bounds
+    final_cost = base_cost * factors.manual_boost
+    
+    # Sinphasé governance: trigger isolation if cost exceeds threshold
+    if final_cost > GOVERNANCE_THRESHOLD:
+        return min(final_cost, ARCHITECTURAL_REORGANIZATION_THRESHOLD)
+    
+    return final_cost
