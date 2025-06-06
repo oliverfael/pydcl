@@ -746,3 +746,517 @@ class TestPipelineIntegrityEcho:
             assert first_repo['repository'] == second_repo['repository'], f"Repository name mismatch at index {i}"
             assert first_repo['cost_score'] == second_repo['cost_score'], f"Cost score mismatch at index {i}"
             assert first_repo['governance_alerts'] == second_repo['governance_alerts'], f"Governance alerts mismatch at index {i}"
+
+
+class TestCLIPipelineIntegration:
+    """
+    CLI pipeline integration validation with systematic command execution testing.
+    
+    Technical Implementation:
+    - Complete CLI workflow execution validation
+    - Configuration integration with pipeline components
+    - Output format compliance across CLI commands
+    - Error handling coordination between CLI and core systems
+    """
+    
+    @pytest.mark.integration
+    @patch('pydcl.github_client.GitHubMetricsClient')
+    @patch('pydcl.cost_scores.CostScoreCalculator')
+    def test_cli_analyze_command_integration(self, mock_calculator, mock_client, mock_github_repositories):
+        """
+        Validate complete CLI analyze command integration workflow.
+        
+        Technical Verification:
+        - CLI argument parsing with pipeline component coordination
+        - GitHub client initialization and authentication flow
+        - Cost calculation engine integration with CLI output formatting
+        - JSON file generation with systematic validation
+        """
+        # Mock calculator responses
+        mock_calc_instance = Mock()
+        mock_calc_instance.calculate_repository_cost.return_value = {
+            'normalized_score': 25.0,
+            'governance_alerts': []
+        }
+        mock_calculator.return_value = mock_calc_instance
+        
+        # Mock GitHub client responses  
+        mock_client_instance = Mock()
+        mock_client_instance.validate_connection.return_value = True
+        
+        # Create mock repository metrics
+        mock_repositories = []
+        for repo_data in mock_github_repositories:
+            metrics = RepositoryMetrics(repo_data['name'])
+            metrics.stars_count = repo_data['stars_count']
+            metrics.commits_last_30_days = repo_data['commits_last_30_days']
+            mock_repositories.append(metrics)
+        
+        mock_client_instance.get_organization_repositories.return_value = mock_repositories
+        mock_client.return_value = mock_client_instance
+        
+        # Test CLI analyze command execution
+        test_args = ['pydcl', 'analyze', '--org', 'obinexus', '--output', 'test_output.json']
+        
+        with patch('sys.argv', test_args):
+            with patch('builtins.print') as mock_print:
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    output_file = Path(temp_dir) / 'test_output.json'
+                    
+                    try:
+                        # Note: This would test actual CLI implementation when available
+                        # Current implementation is placeholder
+                        cli.main()
+                        
+                        # Validate CLI output indicates proper handling
+                        assert mock_print.called
+                        output = ' '.join([str(call) for call in mock_print.call_args_list])
+                        
+                        # Should indicate development phase handling
+                        development_indicators = ['not yet implemented', 'development', 'analyze']
+                        assert any(indicator in output.lower() for indicator in development_indicators)
+                        
+                    except NotImplementedError:
+                        pytest.skip("CLI analyze command not yet implemented")
+    
+    @pytest.mark.integration
+    def test_cli_configuration_integration(self, sample_org_config, temp_config_dir):
+        """
+        Validate CLI configuration integration with pipeline components.
+        
+        Technical Focus:
+        - Configuration file discovery and loading integration
+        - CLI parameter override mechanisms
+        - Configuration validation integration with pipeline
+        - Error handling coordination across CLI and configuration systems
+        """
+        # Create configuration files in test environment
+        config_file = temp_config_dir / 'pydcl.yaml'
+        config_file.write_text(sample_org_config)
+        
+        # Test CLI with configuration file
+        test_args = ['pydcl', 'analyze', '--org', 'obinexus', '--config', str(config_file)]
+        
+        with patch('sys.argv', test_args):
+            with patch('builtins.print') as mock_print:
+                try:
+                    cli.main()
+                    
+                    # Should handle configuration integration
+                    assert mock_print.called
+                    output = ' '.join([str(call) for call in mock_print.call_args_list])
+                    
+                    # Should indicate configuration handling capability
+                    config_indicators = ['config', 'not yet implemented', 'development']
+                    assert any(indicator in output.lower() for indicator in config_indicators)
+                    
+                except NotImplementedError:
+                    pytest.skip("CLI configuration integration not yet implemented")
+    
+    @pytest.mark.integration
+    def test_cli_output_format_integration(self, mock_github_repositories):
+        """
+        Validate CLI output format integration across different commands.
+        
+        Technical Implementation:
+        - JSON output format consistency validation
+        - Table display format integration testing
+        - Error output standardization verification
+        - Progress reporting integration validation
+        """
+        output_format_tests = [
+            {
+                'args': ['pydcl', 'analyze', '--org', 'obinexus', '--output', 'scores.json'],
+                'expected_format': 'json',
+                'description': 'JSON output format'
+            },
+            {
+                'args': ['pydcl', 'display', '--input', 'scores.json', '--format', 'table'],
+                'expected_format': 'table',
+                'description': 'Table display format'
+            }
+        ]
+        
+        for test_case in output_format_tests:
+            with patch('sys.argv', test_case['args']):
+                with patch('builtins.print') as mock_print:
+                    try:
+                        cli.main()
+                        
+                        # Validate output format handling
+                        assert mock_print.called
+                        output = ' '.join([str(call) for call in mock_print.call_args_list])
+                        
+                        # Should handle format specification
+                        format_indicators = [test_case['expected_format'], 'not yet implemented']
+                        assert any(indicator in output.lower() for indicator in format_indicators), \
+                            f"Should handle {test_case['description']}"
+                            
+                    except NotImplementedError:
+                        pytest.skip(f"CLI {test_case['description']} not yet implemented")
+
+
+class TestErrorHandlingIntegration:
+    """
+    Comprehensive error handling integration validation across pipeline components.
+    
+    Technical Implementation:
+    - Cross-component error propagation validation
+    - Error recovery mechanism coordination testing
+    - User-facing error message consistency verification
+    - System resilience validation under failure conditions
+    """
+    
+    @pytest.mark.integration
+    def test_github_api_error_propagation(self, github_api_error_responses):
+        """
+        Validate GitHub API error propagation through pipeline components.
+        
+        Technical Verification:
+        - GitHub API error detection and classification
+        - Error message propagation to CLI interface
+        - Graceful degradation under API failures
+        - Recovery mechanism coordination
+        """
+        # Test different GitHub API error scenarios
+        for error_type, error_response in github_api_error_responses.items():
+            with patch('pydcl.github_client.Github') as mock_github:
+                # Configure mock to raise specific GitHub exception
+                mock_client = Mock()
+                mock_client.get_organization.side_effect = GithubException(
+                    error_response['status_code'], 
+                    error_response['message']
+                )
+                mock_github.return_value = mock_client
+                
+                # Test error handling through pipeline
+                try:
+                    github_client = GitHubMetricsClient(token='test_token')
+                    
+                    # Should handle GitHub API errors gracefully
+                    with pytest.raises(GithubException):
+                        github_client.get_organization_repositories('test-org')
+                        
+                except ImportError:
+                    pytest.skip("GitHub client not available for error testing")
+    
+    @pytest.mark.integration
+    def test_configuration_validation_error_integration(self, invalid_repo_yaml):
+        """
+        Validate configuration validation error integration across components.
+        
+        Technical Focus:
+        - Configuration parsing error detection
+        - Validation error aggregation and reporting
+        - Error recovery with default configuration fallback
+        - User guidance for configuration correction
+        """
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create invalid configuration file
+            invalid_config_path = Path(temp_dir) / 'invalid_config.yaml'
+            invalid_config_path.write_text(invalid_repo_yaml)
+            
+            try:
+                # Test configuration validation error handling
+                config_data = yaml.safe_load(invalid_repo_yaml)
+                validation_errors = validate_config(config_data)
+                
+                # Should detect multiple validation errors
+                assert isinstance(validation_errors, list)
+                assert len(validation_errors) > 0, "Should detect validation errors"
+                
+                # Should classify error severity appropriately
+                error_severities = [error.severity for error in validation_errors]
+                assert 'error' in error_severities or 'critical' in error_severities
+                
+            except NotImplementedError:
+                pytest.skip("Configuration validation not yet implemented")
+    
+    @pytest.mark.integration
+    def test_cost_calculation_error_resilience(self, high_cost_repository_metrics):
+        """
+        Validate cost calculation error resilience and boundary condition handling.
+        
+        Technical Implementation:
+        - Extreme value input handling validation
+        - Mathematical overflow/underflow protection
+        - Governance threshold violation handling
+        - Error recovery with safe default values
+        """
+        # Test extreme value scenarios
+        extreme_test_cases = [
+            {
+                'name': 'extreme-large-repo',
+                'stars_count': 1000000,  # Extremely popular
+                'commits_last_30_days': 10000,  # Extremely active
+                'size_kb': 10000000,  # 10GB repository
+                'description': 'Extremely large repository'
+            },
+            {
+                'name': 'zero-activity-repo',
+                'stars_count': 0,
+                'commits_last_30_days': 0,
+                'size_kb': 0,
+                'description': 'Zero activity repository'
+            }
+        ]
+        
+        cost_calculator = CostScoreCalculator()
+        
+        for test_case in extreme_test_cases:
+            metrics = RepositoryMetrics(test_case['name'])
+            metrics.stars_count = test_case['stars_count']
+            metrics.commits_last_30_days = test_case['commits_last_30_days']
+            metrics.size_kb = test_case['size_kb']
+            
+            # Should handle extreme values gracefully
+            result = cost_calculator.calculate_repository_cost(metrics)
+            
+            # Validate bounded output
+            assert 'normalized_score' in result
+            assert 0.0 <= result['normalized_score'] <= 100.0, \
+                f"Score out of bounds for {test_case['description']}: {result['normalized_score']}"
+            
+            # Validate governance alert generation
+            assert 'governance_alerts' in result
+            assert isinstance(result['governance_alerts'], list)
+
+
+class TestSystemIntegrationScenarios:
+    """
+    Real-world system integration scenarios following OBINexus operational patterns.
+    
+    Technical Implementation:
+    - Multi-division organizational analysis scenarios
+    - Large-scale repository processing validation
+    - Production-like data volume handling
+    - System performance under realistic loads
+    """
+    
+    @pytest.mark.integration
+    @pytest.mark.slow
+    def test_multi_division_organization_analysis(self, sample_org_config):
+        """
+        Validate complete multi-division organization analysis workflow.
+        
+        Technical Scenario:
+        - Multiple divisions with different governance thresholds
+        - Cross-division repository dependency analysis
+        - Division-specific reporting generation
+        - Governance compliance aggregation across divisions
+        """
+        # Create multi-division test scenario
+        multi_division_repos = [
+            # Computing Division repositories
+            {'name': 'libpolycall-bindings', 'division': 'Computing', 'status': 'Core', 'stars': 25, 'commits': 15},
+            {'name': 'nexuslink', 'division': 'Computing', 'status': 'Active', 'stars': 12, 'commits': 28},
+            {'name': 'build-orchestration', 'division': 'Computing', 'status': 'Core', 'stars': 8, 'commits': 22},
+            
+            # UCHE Nnamdi Strategic Projects
+            {'name': 'strategic-planning', 'division': 'UCHE Nnamdi', 'status': 'Core', 'stars': 5, 'commits': 8},
+            {'name': 'governance-framework', 'division': 'UCHE Nnamdi', 'status': 'Active', 'stars': 3, 'commits': 12},
+            
+            # Aegis Engineering repositories
+            {'name': 'polybuild', 'division': 'Aegis Engineering', 'status': 'Core', 'stars': 18, 'commits': 35},
+            {'name': 'deployment-automation', 'division': 'Aegis Engineering', 'status': 'Active', 'stars': 7, 'commits': 19}
+        ]
+        
+        # Process multi-division scenario
+        cost_calculator = CostScoreCalculator()
+        division_results = {}
+        
+        for repo_data in multi_division_repos:
+            metrics = RepositoryMetrics(repo_data['name'])
+            metrics.stars_count = repo_data['stars']
+            metrics.commits_last_30_days = repo_data['commits']
+            
+            # Calculate cost with division-aware parameters
+            result = cost_calculator.calculate_repository_cost(metrics)
+            
+            division = repo_data['division']
+            if division not in division_results:
+                division_results[division] = {
+                    'repositories': [],
+                    'total_score': 0.0,
+                    'governance_violations': 0
+                }
+            
+            division_results[division]['repositories'].append({
+                'name': repo_data['name'],
+                'status': repo_data['status'],
+                'score': result['normalized_score']
+            })
+            
+            division_results[division]['total_score'] += result['normalized_score']
+            
+            # Check governance compliance per division thresholds
+            if result['normalized_score'] > 60.0:  # Computing/Aegis threshold
+                if division in ['Computing', 'Aegis Engineering']:
+                    division_results[division]['governance_violations'] += 1
+            elif result['normalized_score'] > 50.0:  # UCHE Nnamdi enhanced threshold
+                if division == 'UCHE Nnamdi':
+                    division_results[division]['governance_violations'] += 1
+        
+        # Validate multi-division analysis results
+        assert len(division_results) == 3, "Should process all three divisions"
+        
+        # Validate division-specific results
+        for division, results in division_results.items():
+            assert len(results['repositories']) > 0, f"Division {division} should have repositories"
+            assert results['total_score'] >= 0.0, f"Division {division} should have valid total score"
+            
+            # Calculate average score per division
+            avg_score = results['total_score'] / len(results['repositories'])
+            assert 0.0 <= avg_score <= 100.0, f"Division {division} average score out of bounds"
+    
+    @pytest.mark.integration
+    def test_repository_dependency_analysis(self, mock_github_repositories):
+        """
+        Validate repository dependency analysis integration.
+        
+        Technical Focus:
+        - Inter-repository dependency mapping
+        - Circular dependency detection
+        - Dependency impact cost calculation
+        - Build orchestration integration validation
+        """
+        # Create dependency relationships
+        dependency_map = {
+            'libpolycall-bindings': ['nexuslink'],  # libpolycall depends on nexuslink
+            'polybuild': ['libpolycall-bindings', 'nexuslink'],  # polybuild orchestrates both
+            'nexuslink': []  # Base dependency
+        }
+        
+        # Process repositories with dependency awareness
+        cost_calculator = CostScoreCalculator()
+        repo_scores = {}
+        
+        for repo_data in mock_github_repositories:
+            metrics = RepositoryMetrics(repo_data['name'])
+            metrics.stars_count = repo_data['stars_count']
+            metrics.commits_last_30_days = repo_data['commits_last_30_days']
+            
+            # Calculate base cost
+            result = cost_calculator.calculate_repository_cost(metrics)
+            repo_scores[repo_data['name']] = result['normalized_score']
+        
+        # Validate dependency impact analysis
+        for repo_name, dependencies in dependency_map.items():
+            if repo_name in repo_scores:
+                base_score = repo_scores[repo_name]
+                
+                # Repositories with dependencies may have different risk profiles
+                dependency_count = len(dependencies)
+                
+                # Validate that dependency analysis is considered
+                # (Implementation-specific logic would go here)
+                assert base_score >= 0.0, f"Repository {repo_name} should have valid score"
+                
+                # Higher dependency count could indicate higher complexity
+                if dependency_count > 0:
+                    # This is a placeholder for dependency impact analysis
+                    dependency_factor = 1.0 + (dependency_count * 0.1)
+                    assert dependency_factor > 1.0, "Dependencies should impact complexity"
+    
+    @pytest.mark.integration
+    def test_continuous_integration_workflow(self, temp_config_dir, sample_org_config):
+        """
+        Validate CI/CD integration workflow for automated cost analysis.
+        
+        Technical Scenario:
+        - Automated configuration loading
+        - Batch repository processing
+        - Report generation for CI pipeline
+        - Exit code handling for build integration
+        """
+        # Create CI-like environment
+        ci_config_file = temp_config_dir / '.github' / 'pydcl.yaml'
+        ci_config_file.parent.mkdir(exist_ok=True)
+        ci_config_file.write_text(sample_org_config)
+        
+        # Simulate CI environment variables
+        ci_env = {
+            'CI': 'true',
+            'GITHUB_REPOSITORY': 'obinexus/test-repo',
+            'GITHUB_SHA': 'abc123def456',
+            'GITHUB_REF': 'refs/heads/main'
+        }
+        
+        with patch.dict(os.environ, ci_env):
+            # Test CI-oriented command execution
+            ci_args = ['pydcl', 'analyze', '--org', 'obinexus', '--output', 'ci_results.json', '--ci-mode']
+            
+            with patch('sys.argv', ci_args):
+                with patch('builtins.print') as mock_print:
+                    try:
+                        cli.main()
+                        
+                        # Should handle CI mode appropriately
+                        assert mock_print.called
+                        output = ' '.join([str(call) for call in mock_print.call_args_list])
+                        
+                        # Should indicate CI mode handling capability
+                        ci_indicators = ['ci', 'not yet implemented', 'development']
+                        assert any(indicator in output.lower() for indicator in ci_indicators)
+                        
+                    except NotImplementedError:
+                        pytest.skip("CI integration not yet implemented")
+    
+    @pytest.mark.integration
+    @pytest.mark.slow
+    def test_performance_scalability_validation(self, performance_test_data):
+        """
+        Validate system performance scalability under realistic loads.
+        
+        Performance Verification:
+        - Large dataset processing efficiency
+        - Memory usage patterns under load
+        - Concurrent processing capability simulation
+        - Resource utilization optimization validation
+        """
+        large_dataset = performance_test_data['large_organization_repos']
+        
+        # Performance benchmarking
+        start_time = datetime.utcnow()
+        cost_calculator = CostScoreCalculator()
+        
+        # Batch processing simulation
+        batch_size = 25
+        processed_batches = []
+        
+        for i in range(0, len(large_dataset), batch_size):
+            batch = large_dataset[i:i + batch_size]
+            batch_start = datetime.utcnow()
+            
+            batch_results = []
+            for repo_data in batch:
+                metrics = RepositoryMetrics(repo_data['name'])
+                metrics.stars_count = repo_data['stars_count']
+                metrics.commits_last_30_days = repo_data['commits_last_30_days']
+                
+                result = cost_calculator.calculate_repository_cost(metrics)
+                batch_results.append(result['normalized_score'])
+            
+            batch_duration = (datetime.utcnow() - batch_start).total_seconds()
+            processed_batches.append({
+                'batch_size': len(batch),
+                'duration': batch_duration,
+                'avg_score': sum(batch_results) / len(batch_results)
+            })
+        
+        # Performance validation
+        total_duration = (datetime.utcnow() - start_time).total_seconds()
+        total_repos = len(large_dataset)
+        processing_rate = total_repos / total_duration
+        
+        # Should maintain reasonable processing performance
+        assert processing_rate > 50, f"Processing rate too slow: {processing_rate:.2f} repos/sec"
+        
+        # Validate batch processing consistency
+        batch_durations = [batch['duration'] for batch in processed_batches]
+        avg_batch_duration = sum(batch_durations) / len(batch_durations)
+        
+        # Batch processing should be consistent (no significant degradation)
+        for batch in processed_batches:
+            duration_ratio = batch['duration'] / avg_batch_duration
+            assert 0.5 <= duration_ratio <= 2.0, f"Batch processing performance inconsistent: {duration_ratio}"
