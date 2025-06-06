@@ -1,0 +1,2 @@
+[console_scripts]
+pydcl = pydcl.cli:main
