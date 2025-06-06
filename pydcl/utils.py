@@ -64,14 +64,15 @@ def setup_logging(
         log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     
     # Configure logging system
+    handlers: List[logging.Handler] = [logging.StreamHandler(sys.stdout)]
+    if log_file:
+        handlers.append(logging.FileHandler(log_file))
+    
     logging.basicConfig(
         level=log_level,
         format=log_format,
         datefmt='%Y-%m-%d %H:%M:%S',
-        handlers=[
-            logging.StreamHandler(sys.stdout),
-            *([logging.FileHandler(log_file)] if log_file else [])
-        ]
+        handlers=handlers
     )
     
     # Configure third-party library logging
@@ -102,6 +103,14 @@ def validate_config(config_data: Dict[str, Any]) -> List[ValidationError]:
     errors = []
     
     # Phase 1: Structural Validation
+    if not isinstance(config_data, dict):
+        errors.append(ValidationError(
+            field='root',
+            message="Configuration must be a dictionary",
+            severity="critical"
+        ))
+        return errors
+    
     required_fields = ['version', 'organization']
     for field in required_fields:
         if field not in config_data:
@@ -118,7 +127,6 @@ def validate_config(config_data: Dict[str, Any]) -> List[ValidationError]:
             errors.append(ValidationError(
                 field='version',
                 message=f"Invalid version format: {version}",
-                value=version,
                 severity="error"
             ))
     
@@ -139,7 +147,6 @@ def validate_config(config_data: Dict[str, Any]) -> List[ValidationError]:
             errors.append(ValidationError(
                 field='organization',
                 message=f"Invalid GitHub organization name: {org_name}",
-                value=org_name,
                 severity="error"
             ))
     
@@ -347,6 +354,8 @@ def format_technical_duration(seconds: float) -> str:
         return f"{hours}h {remaining_minutes}m"
 
 
+# Private helper functions for systematic validation
+
 def _validate_version_format(version: str) -> bool:
     """Validate semantic version format (major.minor.patch)."""
     
@@ -373,6 +382,14 @@ def _validate_division_configurations(divisions_data: Dict[str, Any]) -> List[Va
     
     errors = []
     
+    if not isinstance(divisions_data, dict):
+        errors = [ValidationError(
+            field='divisions',
+            message="Divisions configuration must be a dictionary",
+            severity="critical"
+        )]
+        return errors
+    
     for division_name, division_config in divisions_data.items():
         # Validate division name
         try:
@@ -381,7 +398,14 @@ def _validate_division_configurations(divisions_data: Dict[str, Any]) -> List[Va
             errors.append(ValidationError(
                 field=f'divisions.{division_name}',
                 message=f"Unknown division type: {division_name}",
-                value=division_name,
+                severity="error"
+            ))
+            continue
+        
+        if not isinstance(division_config, dict):
+            errors.append(ValidationError(
+                field=f'divisions.{division_name}',
+                message="Division configuration must be a dictionary",
                 severity="error"
             ))
             continue
@@ -390,22 +414,32 @@ def _validate_division_configurations(divisions_data: Dict[str, Any]) -> List[Va
         for threshold_field in ['governance_threshold', 'isolation_threshold']:
             if threshold_field in division_config:
                 threshold_value = division_config[threshold_field]
-                if not isinstance(threshold_value, (int, float)) or not (0.0 <= threshold_value <= 1.0):
+                if not isinstance(threshold_value, (int, float)):
+                    errors.append(ValidationError(
+                        field=f'divisions.{division_name}.{threshold_field}',
+                        message=f"Threshold must be a numeric value",
+                        severity="error"
+                    ))
+                elif not (0.0 <= threshold_value <= 1.0):
                     errors.append(ValidationError(
                         field=f'divisions.{division_name}.{threshold_field}',
                         message=f"Threshold must be between 0.0 and 1.0",
-                        value=threshold_value,
                         severity="error"
                     ))
         
         # Validate priority boost
         if 'priority_boost' in division_config:
             boost_value = division_config['priority_boost']
-            if not isinstance(boost_value, (int, float)) or not (0.1 <= boost_value <= 3.0):
+            if not isinstance(boost_value, (int, float)):
                 errors.append(ValidationError(
                     field=f'divisions.{division_name}.priority_boost',
-                    message=f"Priority boost must be between 0.1 and 3.0",
-                    value=boost_value,
+                    message="Priority boost must be a numeric value",
+                    severity="error"
+                ))
+            elif not (0.1 <= boost_value <= 3.0):
+                errors.append(ValidationError(
+                    field=f'divisions.{division_name}.priority_boost',
+                    message="Priority boost must be between 0.1 and 3.0",
                     severity="warning"
                 ))
     
@@ -413,51 +447,87 @@ def _validate_division_configurations(divisions_data: Dict[str, Any]) -> List[Va
 
 
 def _validate_cost_factors(cost_factors_data: Dict[str, Any]) -> List[ValidationError]:
-    """Validate cost factor configurations."""
+    """
+    Validate cost factor configurations with comprehensive error checking.
     
+    Technical Implementation:
+    - Individual weight validation with strict bounds
+    - Cumulative weight distribution analysis
+    - Boost factor validation with threshold enforcement
+    
+    Args:
+        cost_factors_data: Dictionary of cost factor configurations
+        
+    Returns:
+        List of validation errors with severity classification
+    """
     errors = []
     
-    # Validate individual weight parameters
-    weight_fields = [
-        'stars_weight', 'commit_activity_weight', 'build_time_weight',
-        'size_weight', 'test_coverage_weight'
-    ]
+    if not isinstance(cost_factors_data, dict):
+        return [ValidationError(
+            field='cost_factors',
+            message="Cost factors must be a dictionary",
+            severity="critical"
+        )]
+    
+    # Required weight parameters with defaults per CostFactors class
+    weight_fields = {
+        'stars_weight': 0.2,
+        'commit_activity_weight': 0.3,
+        'build_time_weight': 0.2,
+        'size_weight': 0.2,
+        'test_coverage_weight': 0.1
+    }
     
     total_weight = 0.0
+    valid_weights = 0
     
-    for field in weight_fields:
-        if field in cost_factors_data:
-            weight_value = cost_factors_data[field]
-            if not isinstance(weight_value, (int, float)) or not (0.0 <= weight_value <= 1.0):
-                errors.append(ValidationError(
-                    field=f'cost_factors.{field}',
-                    message=f"Weight must be between 0.0 and 1.0",
-                    value=weight_value,
-                    severity="error"
-                ))
-            else:
-                total_weight += weight_value
+    # Validate individual weights
+    for field, default_value in weight_fields.items():
+        weight_value = cost_factors_data.get(field, default_value)
+        
+        if not isinstance(weight_value, (int, float)):
+            errors.append(ValidationError(
+                field=f'cost_factors.{field}',
+                message=f"Weight must be a numeric value",
+                severity="error"
+            ))
+            continue
+            
+        if not (0.0 <= weight_value <= 1.0):
+            errors.append(ValidationError(
+                field=f'cost_factors.{field}',
+                message=f"Weight must be between 0.0 and 1.0",
+                severity="error"
+            ))
+        else:
+            total_weight += weight_value
+            valid_weights += 1
     
-    # Validate total weight constraint
-    if 0.8 <= total_weight <= 1.2:
-        # Acceptable weight distribution
-        pass
-    else:
-        errors.append(ValidationError(
-            field='cost_factors',
-            message=f"Total weight sum {total_weight:.2f} should be approximately 1.0",
-            value=total_weight,
-            severity="warning"
-        ))
+    # Validate total weight distribution (only if we have valid weights)
+    if valid_weights > 0:
+        # Based on default CostFactors: 0.2 + 0.3 + 0.2 + 0.2 + 0.1 = 1.0
+        # Allow reasonable variance per Sinphasé bounds (0.8 to 1.2)
+        if not (0.8 <= total_weight <= 1.2):
+            errors.append(ValidationError(
+                field='cost_factors',
+                message=f"Total weight sum {total_weight:.2f} should be approximately 1.0 (range: 0.8-1.2)",
+                severity="warning"
+            ))
     
-    # Validate manual boost
+    # Validate manual boost if present
     if 'manual_boost' in cost_factors_data:
         boost_value = cost_factors_data['manual_boost']
-        if not isinstance(boost_value, (int, float)) or not (0.1 <= boost_value <= 3.0):
+        if not isinstance(boost_value, (int, float)):
             errors.append(ValidationError(
                 field='cost_factors.manual_boost',
-                message=f"Manual boost must be between 0.1 and 3.0",
-                value=boost_value,
+                message="Manual boost must be a numeric value",
+                severity="error"
+            ))
+        elif not (0.1 <= boost_value <= 3.0):
+            errors.append(ValidationError(
+                field='cost_factors.manual_boost',
+                message="Manual boost must be between 0.1 and 3.0",
                 severity="warning"
             ))
     
@@ -521,10 +591,10 @@ def _create_default_division_metadata(division: DivisionType) -> DivisionMetadat
     )
 
 
-def _normalize_config_for_hashing(config_data: Dict[str, Any]) -> Dict[str, Any]:
+def _normalize_config_for_hashing(config_data: Dict[str, Any]) -> Dict[str, Union[Dict, List, str, int, float, Any]]:
     """Normalize configuration data for deterministic hashing."""
     
-    normalized = {}
+    normalized: Dict[str, Union[Dict, List, str, int, float, Any]] = {}
     
     for key, value in config_data.items():
         if isinstance(value, dict):
@@ -537,7 +607,7 @@ def _normalize_config_for_hashing(config_data: Dict[str, Any]) -> Dict[str, Any]
                 normalized[key] = value
         elif isinstance(value, float):
             # Round floats to avoid precision issues
-            normalized[key] = round(value, 6)
+            normalized[key] = float(round(value, 6))
         else:
             normalized[key] = value
     
